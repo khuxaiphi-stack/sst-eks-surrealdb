@@ -1,3 +1,7 @@
+import * as eks from "@pulumi/eks";
+import * as kubernetes from "@pulumi/kubernetes";
+import * as pulumi from "@pulumi/pulumi";
+
 export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 	const cluster = new eks.Cluster("SurrealDBCluster", {
 		vpcId: vpc.id,
@@ -5,10 +9,11 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 		instanceType: "t3.medium",
 		desiredCapacity: 1,
 		minSize: 1,
-		maxSize: 1,
+		maxSize: 2,
 		storageClasses: "gp3",
 		skipDefaultNodeGroup: false,
 		clusterSecurityGroup: vpc.nodes.securityGroup,
+		createOidcProvider: true,
 	});
 
 	const ebsCsiDriverAddon = new eks.Addon("aws-ebs-csi-driver", {
@@ -23,13 +28,13 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 	const pdNodeGroup = new eks.ManagedNodeGroup("pd-nodegroup", {
 		cluster: cluster,
 		nodeGroupName: "pd-nodes",
-		// Recommended: ["c7g.xlarge"]
+		// Recommended production: ["c7g.xlarge"]
 		instanceTypes: ["t4g.small"],
 		amiType: "AL2023_ARM_64_STANDARD",
 		scalingConfig: {
 			desiredSize: 1,
 			minSize: 1,
-			maxSize: 1,
+			maxSize: 3,
 		},
 		labels: { dedicated: "pd" },
 		taints: [{ key: "dedicated", value: "pd", effect: "NO_SCHEDULE" }],
@@ -41,13 +46,13 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 	const tidbNodeGroup = new eks.ManagedNodeGroup("tidb-nodegroup", {
 		cluster: cluster,
 		nodeGroupName: "tidb-nodes",
-		// Recommended: ["c7g.4xlarge"]
+		// Recommended production: ["c7g.4xlarge"]
 		instanceTypes: ["t4g.medium"],
 		amiType: "AL2023_ARM_64_STANDARD",
 		scalingConfig: {
 			desiredSize: 1,
 			minSize: 1,
-			maxSize: 1,
+			maxSize: 2,
 		},
 		labels: { dedicated: "tidb" },
 		taints: [{ key: "dedicated", value: "tidb", effect: "NO_SCHEDULE" }],
@@ -59,13 +64,13 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 	const tikvNodeGroup = new eks.ManagedNodeGroup("tikv-nodegroup", {
 		cluster: cluster,
 		nodeGroupName: "tikv-nodes",
-		// Recommended: ["m7g.4xlarge"]
+		// Recommended production: ["m7g.4xlarge"]
 		instanceTypes: ["m7g.medium"],
 		amiType: "AL2023_ARM_64_STANDARD",
 		scalingConfig: {
 			desiredSize: 1,
 			minSize: 1,
-			maxSize: 1,
+			maxSize: 3,
 		},
 		labels: { dedicated: "tikv" },
 		taints: [{ key: "dedicated", value: "tikv", effect: "NO_SCHEDULE" }],
@@ -74,7 +79,7 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 	});
 
 	const provider = new kubernetes.Provider("eks-provider", {
-		kubeconfig: cluster.kubeconfig,
+		kubeconfig: cluster.kubeconfigJson,
 	});
 
 	const tidbCrds = new kubernetes.yaml.ConfigFile(
@@ -124,6 +129,7 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 				pd: {
 					replicas: 1,
 					requests: { storage: "1Gi" },
+					storageClassName: "gp3",
 					nodeSelector: { dedicated: "pd" },
 					tolerations: [
 						{ key: "dedicated", value: "pd", effect: "NoSchedule" },
@@ -132,6 +138,7 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 				tikv: {
 					replicas: 1,
 					requests: { storage: "10Gi" },
+					storageClassName: "gp3",
 					nodeSelector: { dedicated: "tikv" },
 					tolerations: [
 						{ key: "dedicated", value: "tikv", effect: "NoSchedule" },
@@ -188,6 +195,8 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 					version: "v0.1.0",
 				},
 				persistent: true,
+				storageClassName: "gp3",
+				storage: "5Gi",
 			},
 		},
 		{
@@ -252,10 +261,14 @@ export const setupSurrealdb = async (vpc: sst.aws.Vpc) => {
 				},
 			},
 		},
-		{ provider, dependsOn: [tidbCluster, tidbMonitor] },
+		{ provider, dependsOn: [tidbCluster, tidbMonitor, kong] },
 	);
 
+	const surrealdbUrl = pulumi.interpolate`http://${surrealdb.status.namespace}.svc.cluster.local:8000`;
+
 	return {
+		clusterName: cluster.eksCluster.name,
 		kubeconfig: cluster.kubeconfig,
+		surrealdbUrl,
 	};
 };
