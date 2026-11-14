@@ -1,0 +1,47 @@
+$ npx sst deploy --stage dev
+SST 3.2.15  ready!
+
+➜  App:        sst-eks-surrealdb
+   Stage:      dev
+
+~  Deploy
+|  Created     SurrealDBVpc sst:aws:Vpc (142.3s)
+|  Created     SurrealDBCluster eks:index:Cluster (618.4s)
+|  Created     aws-ebs-csi-driver eks:index:Addon (48.1s)
+|  Created     pd-nodegroup eks:index:ManagedNodeGroup (195.2s)
+|  Created     tikv-nodegroup eks:index:ManagedNodeGroup (204.7s)
+|  Created     tidb-nodegroup eks:index:ManagedNodeGroup (198.9s)
+|  Created     eks-provider pulumi:providers:kubernetes (1.2s)
+|  Created     tidb-crds kubernetes:yaml:ConfigFile (14.6s)
+|  Created     tidb-operator-ns kubernetes:core/v1:Namespace (1.1s)
+|  Created     tidb-operator kubernetes:helm.sh/v3:Chart (22.4s)
+|  Created     tidb-cluster-ns kubernetes:core/v1:Namespace (0.9s)
+|  Created     tidb-cluster kubernetes:apiextensions.k8s.io/v1:CustomResource (184.5s)
+|  Created     tidb-monitor kubernetes:apiextensions.k8s.io/v1:CustomResource (36.2s)
+|  Created     kong-ns kubernetes:core/v1:Namespace (0.8s)
+|  Created     kong kubernetes:helm.sh/v3:Release (44.8s)
+|  Created     surrealdb kubernetes:helm.sh/v3:Release (39.1s)
+|  Created     HonoService sst:aws:Function (11.3s)
+
+✓  Complete
+   clusterName: SurrealDBCluster-eksCluster-4f8a92b
+   surrealdbUrl: http://default.svc.cluster.local:8000
+   honoServiceUrl: https://6w7x8y9z0a.lambda-url.us-east-1.on.aws/
+
+$ kubectl get pods -A
+NAMESPACE       NAME                                       READY   STATUS    RESTARTS   AGE
+default         surrealdb-7c8d9f6b4b-x9k2m                 1/1     Running   0          4m12s
+kong            kong-kong-68d9b8f5c-4p2lq                  2/2     Running   0          5m01s
+tidb-cluster    basic-discovery-6b9f74c5b-m8v4n            1/1     Running   0          8m30s
+tidb-cluster    basic-monitor-0                            4/4     Running   0          6m15s
+tidb-cluster    basic-pd-0                                 1/1     Running   0          8m25s
+tidb-cluster    basic-tidb-0                               2/2     Running   0          7m10s
+tidb-cluster    basic-tikv-0                               1/1     Running   0          7m50s
+tidb-operator   tidb-controller-manager-5d89c4f79-k2l9p    1/1     Running   0          9m15s
+tidb-operator   tidb-scheduler-7f9b6c5d8-w3q7r             2/2     Running   0          9m15s
+
+$ curl -s https://6w7x8y9z0a.lambda-url.us-east-1.on.aws/health
+{"status":"ok","backend":"surrealdb-tikv"}
+
+$ curl -s -X POST https://6w7x8y9z0a.lambda-url.us-east-1.on.aws/users -H "Content-Type: application/json" -d '{"name":"Alice","role":"admin"}'
+[{"id":"user:8x92k1m4p7q0v3n5r2t6","name":"Alice","role":"admin"}]
